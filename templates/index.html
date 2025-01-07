@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Light Chat Interface</title>
+  <link rel="stylesheet" type="text/css" href="/static/style.css">
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/gridjs/dist/gridjs.umd.js"></script>
+
+</head>
+<body>
+  <header class="header">
+    <div class="logo">Proof of Concept: Question/Answering System over SQL Data with LLM</div>
+    <nav class="menu">
+      <a href="#">Home</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <div class="login">
+      <button>Logout</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <aside class="sidebar">
+        <div class="upload-container">
+          <h4>Upload csv|xlsx to DB [For Demo Only]</h4>
+          <form id="upload-form" enctype="multipart/form-data">
+            <div id="uploading-spinner" style="display: none;"></div>
+            <input type="file" id="file-input" name="file" accept=".csv, .xlsx" required />
+            <button type="submit">Upload</button>
+          </form>
+          <div id="upload-status"></div>
+        </div>
+
+        <h3>Database Tables</h3>
+        <div class="tables-list">
+            <div id="radio-box" class="radio-box">
+                <!-- Radio buttons will be dynamically added here -->
+            </div>
+            <p id="loading">Loading tables...</p>
+            <p id="error" class="error" style="display: none;">Failed to load tables.</p>
+        </div>
+
+        <h3>Table Fields</h3>
+        <ul class="fields-list">
+            <!-- Fields will be dynamically populated -->
+        </ul>
+        <p id="loading-fields"></p>
+        <p id="error-fields" class="error" style="display: none;">Failed to load fields.</p>
+
+    </aside>
+
+    <section class="chat-container">
+      <div class="chat-history" id="chat-history">
+        <p class="userText"><div class="chat-message chat-message-right"><div class="chat-meta"><span class="icon-person"></span><span class="datetime">05:02:47</span></div><div class="chat-bubble"><div class="username">You</div><div class="message left">Ping</div></div></div></p>
+        <p class="botText"><div class="chat-message chat-message-left"><div class="chat-meta"><span class="icon-robot"></span><span class="datetime">05:02:54</span></div><div class="chat-bubble"><div class="username">LLM</div><div class="message right">Pong</div></div></div></p>
+      </div>
+
+
+      <div class="chat-input">
+        <div id="loading-spinner" style="display: none;"></div>
+        <input type="text" id="user-input" placeholder="Type your question...">
+        <button id="chat-input-button" class="chat-input-button">Send</button>
+        <button id="new-chat" class="new-chat-button">Clear</button>
+      </div>
+
+    <div class="data-sample">
+        <h4>Data Sample</h4>
+        <div id="table"></div>
+    </div>
+     
+    </section>
+
+    <aside class="info-panel">
+      <h3>Terms of Use</h3>
+      <p>By using this chatbot, you agree to our policies.</p>
+      <a href="#">Privacy Policy</a><br>
+      <a href="#">Risk Assessment</a>
+      <br>
+      <br>
+      <br>
+      <br>
+      <br>
+      <br>
+      <br>
+      <h3>Contact Analytics Team</h3>
+      <form class="analyst-form">
+        <label for="subject">Subject:</label>
+        <input type="text" id="subject" placeholder="Enter subject...[Request for Deeper Analysis on Anomalies]">
+        <label for="request">Request:</label>
+        <textarea id="request" rows="7" placeholder="Enter your request...
+[Hi Team,
+I noticed some unusual patterns/anomalies that caught my attention. Specifically,...
+Could you please:
+1) Verify...
+2) Investigate...]
+        "></textarea>
+        <button>Submit</button>
+      </form>
+    </aside>
+
+  </main>
+
+  <script>
+          // Handle form submission
+          document.getElementById("upload-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            const fileInput = document.getElementById("file-input");
+            const file = fileInput.files[0];
+            const uploading_spinner = document.getElementById("uploading-spinner"); // Spinner element
+            if (!file) {
+              document.getElementById("upload-status").innerText = "Please select a file.";
+              return;
+            }
+
+            formData.append("file", file);
+
+            try {
+              // Show spinner
+              uploading_spinner.style.display = 'flex';
+
+              const response = await fetch("/api/upload-file", {
+                method: "POST",
+                body: formData,
+              });
+
+
+              if (response.ok) {
+                await initializeTable();
+              } else {
+                const error = await response.text();
+                document.getElementById("upload-status").innerText = `Error: ${error}`;
+                return;
+              }
+
+              const result = await response.json();
+              document.getElementById("upload-status").innerText = `File uploaded successfully.`;
+            } catch (error) {
+              console.error("Error uploading file:", error);
+              document.getElementById("upload-status").innerText = "Failed to upload file.";
+            } finally {
+              // Ensure the spinner is hidden even if an error occurs
+              uploading_spinner.style.display = "none";
+            }
+          });
+
+            async function fetchTableFields(tableName) {
+                const fieldsList = document.querySelector('.fields-list');
+
+                try {
+                    const response = await fetch(`/api/get-fields?table=${tableName}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const fields = Array.isArray(data.fields) ? data.fields : [];
+
+                    fieldsList.innerHTML = ''; // Clear existing fields
+                    fields.forEach(field => {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = field;
+                        fieldsList.appendChild(listItem);
+                    });
+                } catch (error) {
+                    console.error('Error fetching table fields:', error);
+                    fieldsList.innerHTML = '<li class="error">Failed to load fields.</li>';
+                }
+            }
+
+            async function fetchTableSample(tableName) {
+                const tableContainer = document.getElementById('table');
+
+                try {
+                    // Fetch sample data for the selected table
+                    const response = await fetch(`/api/get-table-sample?table_name=${tableName}&limit=3`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Extract columns and data from the sample
+                    const columns = Object.keys(data.sample[0] || {}).map(field => ({
+                        name: field,
+                        formatter: cell => cell || 'N/A', // Handle null/undefined cells
+                    }));
+                    const rows = data.sample.map(row => Object.values(row));
+
+                    // Reset the container by replacing the inner content
+                    tableContainer.innerHTML = ''; // Clear the container
+                    const newTableElement = document.createElement('div');
+                    newTableElement.setAttribute('id', 'gridjs-table');
+                    tableContainer.appendChild(newTableElement);
+
+                    // Initialize a new Grid.js instance with the fetched data
+                    new gridjs.Grid({
+                        columns: columns,
+                        data: rows,
+                        pagination: false,
+                        search: false,
+                        sort: false,
+                    }).render(newTableElement);
+
+                } catch (error) {
+                    console.error('Error fetching table sample:', error);
+
+                    // Display an error message in the table element
+                    tableContainer.innerHTML = '<p class="error">Failed to load table sample.</p>';
+                }
+            }
+
+
+            async function initializeTable() {
+                const radioBox = document.getElementById('radio-box');
+                const loadingMessage = document.getElementById('loading');
+                const errorMessage = document.getElementById('error');
+
+                try {
+                    const response = await fetch('/api/get-tables');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const tables = data.tables;
+
+                    loadingMessage.style.display = 'none';
+                    radioBox.innerHTML = ''; // Clear existing radio buttons
+
+                    tables.forEach((table, index) => {
+                        const label = document.createElement('label');
+                        const input = document.createElement('input');
+
+                        input.type = 'radio';
+                        input.name = 'table';
+                        input.value = table;
+
+                        if (index === 0) input.checked = true;
+
+                        label.appendChild(input);
+                        label.append(` ${table}`);
+                        radioBox.appendChild(label);
+                    });
+
+                    // Fetch fields and sample for the first table by default
+                    const defaultTable = tables[0];
+                    await fetchTableFields(defaultTable);
+                    await fetchTableSample(defaultTable);
+
+                    // Attach event listeners for dynamically added radio buttons
+                    document.querySelectorAll('input[name="table"]').forEach(input => {
+                        input.addEventListener('change', async (event) => {
+                            const selectedTable = event.target.value;
+                            await fetchTableFields(selectedTable);
+                            await fetchTableSample(selectedTable);
+                        });
+                    });
+                } catch (error) {
+                    console.error('Error initializing table:', error);
+                    loadingMessage.style.display = 'none';
+                    errorMessage.style.display = 'block';
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', initializeTable);
+
+
+
+
+            // Reference to chat history
+            const chatHistory = document.getElementById('chat-history');
+
+            function scrollToBottom() {
+                const chatbox = document.getElementById("chat-history");
+                chatbox.scrollTop = chatbox.scrollHeight;
+            }
+
+            function showLoadingSpinner() {
+              document.getElementById('loading-spinner').style.display = 'flex';
+            }
+
+            function hideLoadingSpinner() {
+              document.getElementById('loading-spinner').style.display = 'none';
+            }
+
+
+            $(document).ready(function() {
+                function getBotResponse() {
+
+                    // Show spinner
+                    showLoadingSpinner();
+
+                    var rawText = $('#user-input').val();
+                    // Generate the current time with hours, minutes, and seconds
+                    var currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    var userHtml = '<p class="userText"><div class="chat-message chat-message-right"><div class="chat-meta"><span class="icon-person"></span><span class="datetime">' + currentTime + '</span></div><div class="chat-bubble"><div class="username">You</div><div class="message left">' + rawText + '</div></div></div></p>';
+                    $('#user-input').val("");
+                    $('#chat-history').append(userHtml);
+                    scrollToBottom();
+                    document.getElementById('user-input').scrollIntoView({block: 'start', behavior: 'smooth'});
+
+                    //const selectedTable = $('input[name="table"]:checked').val();
+                    //var note = ' Take into account that, Unless the user specifies a specific table name, select from ' + selectedTable
+                    $.get("/api/get-chat-bot-response", { msg: rawText }).done(function(data) {
+                        // Generate the current time with hours, minutes, and seconds
+                        var currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+                        var botHtml = '<p class="botText"><div class="chat-message chat-message-left"><div class="chat-meta"><span class="icon-robot"></span><span class="datetime">' + currentTime + '</span></div><div class="chat-bubble"><div class="username">LLM</div><div class="message right">' + data + '</div></div></div></p>';
+                        $("#chat-history").append(botHtml);
+                        scrollToBottom();
+                        document.getElementById('user-input').scrollIntoView({block: 'start', behavior: 'smooth'});
+
+                        // Hide spinner
+                        hideLoadingSpinner();
+
+                    });
+
+                // Scroll to the bottom
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                }
+                $('#user-input').keypress(function(e) {
+                    if(e.which == 13) {
+                        getBotResponse();
+                    }
+                });
+                $('#chat-input-button').click(function() {
+                    getBotResponse();
+                })
+
+                $('#new-chat').click(function() {
+                    $('#chat-history').empty();
+                })
+            });  
+
+    // Ensure the last message is always visible
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+
+
+  </script>
+</body>
+</html>
